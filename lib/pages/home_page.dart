@@ -1,12 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pdf/pages/home_drawer.dart';
 import 'package:pdf/pages/pdf_view_page.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
-//import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -19,13 +19,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<File> pdfFiles = [];
   bool _hasPermission = false;
-  final bool _isDarkMode = false;
+  bool _isDarkMode = false;
   final bool _isVerticalSwipe = true;
   int _currentPdfIndex = 0;
-  final _noMorePdfSnackBar = const SnackBar(
-    backgroundColor: Color.fromARGB(255, 253, 2, 2),
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _errorSnackBar = const SnackBar(
+    backgroundColor: Color.fromARGB(255, 255, 0, 0),
     content: Text(
-      'There are no more PDFs to display',
+      'No files to display',
       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
     ),
     showCloseIcon: true,
@@ -36,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // _loadTheme();
+    _loadTheme();
     _loadPdfFiles();
     _requestStoragePermission();
   }
@@ -48,9 +49,33 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _hasPermission = true;
       });
+    } else if (status == PermissionStatus.denied) {
+      _showPermissionDeniedDialog();
     } else if (status == PermissionStatus.permanentlyDenied) {
       _showPermissionPermanentlyDeniedDialog();
     }
+  }
+
+  void _showPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permission Denied'),
+          content:
+              const Text('Please grant storage permission to access files.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                openAppSettings();
+              },
+              child: const Text('Open Setting'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showPermissionPermanentlyDeniedDialog() {
@@ -123,13 +148,45 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadTheme() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool? isDarkMode = prefs.getBool('isDarkMode');
+    if (isDarkMode != null) {
+      setState(
+        () {
+          _isDarkMode = isDarkMode;
+        },
+      );
+    }
+  }
+
+  void _shareApp() async {
+    const url =
+        'https://images.app.goo.gl/RJKMNGi8xy6goKUo6'; // Replace with your app store link
+    // ignore: deprecated_member_use
+    if (await canLaunch(url)) {
+      await launchUrl(url as Uri);
+    } else {
+      if (kDebugMode) {
+        _errorSnackBar;
+      }
+    }
+  }
+
+  Future<void> _saveTheme(bool isDarkMode) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDarkMode', isDarkMode);
+  }
+
   void _loadNextPdf() {
     if (_currentPdfIndex < pdfFiles.length - 1) {
       _currentPdfIndex++;
       _openPdfViewer(pdfFiles[_currentPdfIndex].path);
     } else {
       // You can handle the case when there are no more PDFs to display
-      _noMorePdfSnackBar;
+      if (kDebugMode) {
+        _errorSnackBar;
+      }
     }
   }
 
@@ -148,11 +205,45 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 255, 17, 0),
         title: const Text("ASinfo PDF Reader"),
       ),
-      drawer: const HomeDrawer(),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(
+                color: Color.fromARGB(255, 247, 18, 1),
+              ),
+              child: Text(
+                'Settings',
+                style: TextStyle(fontSize: 24, color: Colors.white),
+              ),
+            ),
+            ListTile(
+              title: const Text('Dark Theme'),
+              trailing: Switch(
+                value: _isDarkMode,
+                onChanged: (value) {
+                  setState(() {
+                    _isDarkMode = value;
+                  });
+                  _saveTheme(value);
+                },
+              ),
+            ),
+            // share button
+            ListTile(
+              title: const Text("Share"),
+              leading: const Icon(Icons.share),
+              onTap: _shareApp,
+            ),
+          ],
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
         child: SingleChildScrollView(
@@ -223,14 +314,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   }
                                 },
                                 itemBuilder: (BuildContext context) {
-                                  return ['Delete'].map(
-                                    (String choice) {
-                                      return PopupMenuItem<String>(
-                                        value: 'delete',
-                                        child: Text(choice),
-                                      );
-                                    },
-                                  ).toList();
+                                  return ['Delete'].map((String choice) {
+                                    return PopupMenuItem<String>(
+                                      value: 'delete',
+                                      child: Text(choice),
+                                    );
+                                  }).toList();
                                 },
                               ),
                             ],
